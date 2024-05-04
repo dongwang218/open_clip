@@ -41,6 +41,7 @@ class TimmModel(nn.Module):
             drop_path=None,
             patch_drop=None,
             pretrained=False,
+            features_only=None,
     ):
         super().__init__()
         if timm is None:
@@ -53,8 +54,10 @@ class TimmModel(nn.Module):
             timm_kwargs['drop_path_rate'] = drop_path
         if patch_drop is not None:
             timm_kwargs['patch_drop_rate'] = patch_drop
+        if features_only is not None:
+            timm_kwargs['features_only'] = features_only
 
-        custom_pool = pool in ('abs_attn', 'rot_attn')
+        custom_pool = pool in ('abs_attn', 'rot_attn', 'avg')
         if proj:
             assert proj in ("linear", "mlp", "none")
         extra_proj = proj in ("linear", "mlp")
@@ -78,15 +81,34 @@ class TimmModel(nn.Module):
             )
             feat_size = self.trunk.default_cfg.get('pool_size', None)
             feature_ndim = 1 if not feat_size else 2
-            if custom_pool:
-                assert feature_ndim == 2
-                # if attn pooling used, remove both classifier and default pool
-                self.trunk.reset_classifier(0, global_pool='')
+            if hasattr(self.trunk, 'reset_classifier'):
+                if custom_pool:
+                    assert feature_ndim == 2
+                    # if attn pooling used, remove both classifier and default pool
+                    self.trunk.reset_classifier(0, global_pool='')
+                else:
+                    # reset global pool if pool config set, otherwise leave as network default
+                    reset_kwargs = dict(global_pool=pool) if pool else {}
+                    self.trunk.reset_classifier(0, **reset_kwargs)
+            if features_only:
+                def get_last_conv_layer(model):
+                    # Get the list of submodules
+                    submodules = list(model._modules.items())
+                    # Iterate over the submodules in reverse order
+                    for name, submodule in reversed(submodules):
+                        # If the submodule is a Conv2d layer, return it
+                        if isinstance(submodule, nn.Conv2d):
+                            return submodule
+                        # If the submodule has submodules itself, call the function recursively
+                        if len(list(submodule._modules.items())) > 0:
+                            last_conv = get_last_conv_layer(submodule)
+                            if last_conv is not None:
+                                return last_conv
+                    # If none of the above conditions are met, return None
+                    return None
+                prev_chs = get_last_conv_layer(self.trunk).out_channels
             else:
-                # reset global pool if pool config set, otherwise leave as network default
-                reset_kwargs = dict(global_pool=pool) if pool else {}
-                self.trunk.reset_classifier(0, **reset_kwargs)
-            prev_chs = self.trunk.num_features
+                prev_chs = self.trunk.num_features
 
         head_layers = OrderedDict()
 
@@ -97,6 +119,9 @@ class TimmModel(nn.Module):
         elif pool == 'rot_attn':
             head_layers['pool'] = RotAttentionPool2d(prev_chs, out_features=embed_dim)
             prev_chs = embed_dim
+        elif pool == 'avg':
+            head_layers['pool'] = nn.AdaptiveAvgPool2d((1,1))
+            head_layers['flatten'] = nn.Flatten()
 
         # NOTE attention pool ends with a projection layer, so proj should usually be set to '' if such pooling is used
         if proj == 'linear':
@@ -148,5 +173,7 @@ class TimmModel(nn.Module):
 
     def forward(self, x):
         x = self.trunk(x)
+        if isinstance(x, list):
+            x = x[-1]
         x = self.head(x)
         return x

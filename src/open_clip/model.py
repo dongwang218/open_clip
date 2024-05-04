@@ -52,7 +52,7 @@ class CLIPVisionCfg:
     timm_proj_bias: bool = False  # enable bias final projection
     timm_drop: float = 0.  # head dropout
     timm_drop_path: Optional[float] = None  # backbone stochastic depth
-
+    timm_features_only: Optional[bool] = None  # set zero will exclude the classification head
 
 @dataclass
 class CLIPTextCfg:
@@ -127,6 +127,7 @@ def _build_vision_tower(
             patch_drop=vision_cfg.patch_dropout if vision_cfg.patch_dropout > 0 else None,
             embed_dim=embed_dim,
             image_size=vision_cfg.image_size,
+            features_only=vision_cfg.timm_features_only,
         )
     elif isinstance(vision_cfg.layers, (tuple, list)):
         vision_heads = vision_cfg.width * 32 // vision_cfg.head_width

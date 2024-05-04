@@ -8,6 +8,7 @@ import sys
 import braceexpand
 from dataclasses import dataclass
 from multiprocessing import Value
+import glob
 
 import numpy as np
 import pandas as pd
@@ -172,7 +173,7 @@ def count_samples(dataloader):
 
 
 def filter_no_caption_or_no_image(sample):
-    has_caption = ('txt' in sample)
+    has_caption = ('json' in sample)
     has_image = ('png' in sample or 'jpg' in sample or 'jpeg' in sample or 'webp' in sample)
     return has_caption and has_image
 
@@ -213,6 +214,7 @@ def group_by_keys_nothrow(data, keys=base_plus_ext, lcase=True, suffixes=None, h
 
 def tarfile_to_samples_nothrow(src, handler=log_and_continue):
     # NOTE this is a re-impl of the webdataset impl with group_by_keys that doesn't throw
+    print(next(iter(src)))
     streams = url_opener(src, handler=handler)
     files = tar_file_expander(streams, handler=handler)
     samples = group_by_keys_nothrow(files, handler=handler)
@@ -349,6 +351,9 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
     if is_train and args.train_data_upsampling_factors is not None:
         assert resampled, "--train_data_upsampling_factors is only supported when sampling with replacement (with --dataset-resampled)."
     
+    if isinstance(input_shards, str):
+        input_shards = glob.glob(input_shards)
+        print(f"Total {len(input_shards)} file, top 10 {input_shards[:10]}")
     if resampled:
         pipeline = [ResampledShards2(
             input_shards,
@@ -386,11 +391,17 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
             # at this point, we have an iterator over the shards assigned to each worker
             wds.tarfile_to_samples(handler=log_and_continue),
         ])
+    def extract_text_from_json(json_data):
+        texts = json_data.get('texts')
+        if texts and len(texts) > 0 and len(texts[0]) > 1:
+            return texts[0][1]
+        else:
+            return ""
     pipeline.extend([
         wds.select(filter_no_caption_or_no_image),
         wds.decode("pilrgb", handler=log_and_continue),
-        wds.rename(image="jpg;png;jpeg;webp", text="txt"),
-        wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
+        wds.rename(image="jpg;png;jpeg;webp", text="json"),
+        wds.map_dict(image=preprocess_img, text=lambda textb: tokenizer([extract_text_from_json(textb)])[0]),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, partial=not is_train)
     ])
