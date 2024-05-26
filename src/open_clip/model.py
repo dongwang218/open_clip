@@ -570,7 +570,7 @@ def resize_text_pos_embed(state_dict, model, interpolation: str = 'linear', anti
     old_width = old_pos_embed.shape[1]
     num_pos = model_pos_embed.shape[0]
     width = model_pos_embed.shape[1]
-    assert old_width == width, 'text pos_embed width changed!'
+    assert old_width == width, f'text pos_embed width changed! {old_width} != {width}'
     if old_num_pos == num_pos:
         return
 

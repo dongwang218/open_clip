@@ -36,7 +36,7 @@ from training.params import parse_args
 from training.scheduler import cosine_lr, const_lr, const_lr_cooldown
 from training.train import train_one_epoch, evaluate
 from training.file_utils import pt_load, check_exists, start_sync_process, remote_sync
-
+from finetune.wise_ft import wise_ft
 
 LATEST_CHECKPOINT_NAME = "epoch_latest.pt"
 
@@ -239,6 +239,7 @@ def main(args):
         output_dict=True,
         **model_kwargs,
     )
+        
     if args.distill:
         # FIXME: currently assumes the model you're distilling from has the same tokenizer & transforms.
         dist_model, _, _ = create_model_and_transforms(
@@ -354,6 +355,9 @@ def main(args):
 
     # initialize datasets
     tokenizer = get_tokenizer(args.model)
+    if args.finetune:
+        return wise_ft(args, model, preprocess_train, preprocess_val, tokenizer)
+
     data = get_data(
         args,
         (preprocess_train, preprocess_val),

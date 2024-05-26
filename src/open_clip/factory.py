@@ -310,6 +310,8 @@ def create_model(
 
     if jit:
         model = torch.jit.script(model)
+        # torch.jit.save(model, "traced_clip.pt")
+
 
     # set image preprocessing configuration in model attributes for convenience
     if getattr(model.visual, 'image_size', None) is not None:
