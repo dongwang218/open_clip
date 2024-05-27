@@ -139,3 +139,20 @@ for k in ks:
         "k": lambda self, num_samples=k: num_samples,
     })
     globals()[cls_name] = dyn_cls
+
+class VWW(ImageNet):
+    def __init__(self,
+                 preprocess,
+                 location=os.path.expanduser('~/data'),
+                 batch_size=32,
+                 num_workers=32):
+        super(VWW, self).__init__(preprocess, location, batch_size, num_workers, classnames='vww')
+
+    def name(self):
+        return 'vww'
+    
+    def accuracy(logits, y, image_paths, args):
+        preds = (logits >= 0).float()
+        correct = (preds == y.view(-1, 1)).float()
+        accuracy = correct.sum() / len(correct)
+        return accuracy, len(correct)

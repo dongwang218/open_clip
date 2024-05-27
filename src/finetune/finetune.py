@@ -50,8 +50,11 @@ def finetune(args):
     model = torch.nn.DataParallel(model, device_ids=devices)
     model.train()
 
+    is_binary = args.classnames in ['vww']
     if args.ls > 0:
         loss_fn = LabelSmoothing(args.ls)
+    elif is_binary:
+        loss_fn = torch.nn.BCEWithLogitsLoss()
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -79,6 +82,8 @@ def finetune(args):
 
             logits = model(inputs)
 
+            if is_binary:
+                labels = labels.view(-1, 1).float()
             loss = loss_fn(logits, labels)
 
             loss.backward()

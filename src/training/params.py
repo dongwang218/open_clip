@@ -523,7 +523,13 @@ def parse_args(args):
         type=int,
         default=500,
     )
-   
+    parser.add_argument(
+        "--classnames",
+        type=str,
+        default="openai",
+        help="Which class names to use.",
+    )
+
     args = parser.parse_args(args)
 
     # If some params are not passed, we use the default values based on model name.

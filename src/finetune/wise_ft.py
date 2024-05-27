@@ -9,6 +9,7 @@ from src.finetune.modeling import ClassificationHead, ImageEncoder, ImageClassif
 from open_clip import get_input_dtype, get_tokenizer, build_zero_shot_classifier, \
     IMAGENET_CLASSNAMES, OPENAI_IMAGENET_TEMPLATES
 from src.finetune.eval import evaluate
+from src.finetune.imagenet_classnames import get_classnames
 
 def _merge(alpha, theta_0, theta_1):
     # interpolate between all weights in the checkpoints
@@ -24,10 +25,11 @@ def wise_ft(args, model, preprocess_train, preprocess_val, tokenizer):
     if args.load is None:
         # Build and save zero-shot model
         image_encoder = ImageEncoder(args, model, preprocess_train, preprocess_val, keep_lang=True)
+        classnames = get_classnames(args.classnames)
         zeroshot_weights = build_zero_shot_classifier(
             model,
             tokenizer=tokenizer,
-            classnames=IMAGENET_CLASSNAMES,
+            classnames=classnames,
             templates=OPENAI_IMAGENET_TEMPLATES,
             num_classes_per_batch=10,
             device=args.device,

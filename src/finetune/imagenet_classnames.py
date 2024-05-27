@@ -206,6 +206,8 @@ def get_classnames(source):
         return [v.replace('_', ' ') for v in imagenet_vid_robust_classnames]
     elif source == 'objectnet_classnames':
         return [v.lower() for v in objectnet_classnames]
+    elif source == 'vww':
+        return ['person']
     else:
         raise ValueError(f'Unknown classname source for imagenet: {source}')
     return all_classnames

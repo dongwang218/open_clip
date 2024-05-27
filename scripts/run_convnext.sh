@@ -17,7 +17,7 @@ export MASTER_PORT=12802
 master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_ADDR=$master_addr
 
-cd /private/home/dongwang/workspace/github/open_clip
+cd ~/workspace/github/open_clip
 export PYTHONPATH="$PYTHONPATH:$PWD/src"
 
 srun --cpu_bind=v --accel-bind=gn python -m training.main \
