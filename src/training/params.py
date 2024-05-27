@@ -529,6 +529,12 @@ def parse_args(args):
         default="openai",
         help="Which class names to use.",
     )
+    parser.add_argument(
+        "--bias",
+        type=float,
+        default=None,
+        help="fine tune the binary classififer with this bias based on cosine similarity",
+    )
 
     args = parser.parse_args(args)
 

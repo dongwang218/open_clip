@@ -30,6 +30,9 @@ def eval_single_dataset(image_classifier, dataset, args):
         # keep track of labels, predictions and metadata
         all_labels, all_preds, all_metadata = [], [], []
 
+    is_binary = args.classnames in ['vww']
+    sum_logits= [0.0, 0.0]
+    num_logits = [0, 0]
     with torch.no_grad():
         top1, correct, n = 0., 0., 0.
         for i, data in batched_data:
@@ -47,6 +50,10 @@ def eval_single_dataset(image_classifier, dataset, args):
 
             if hasattr(dataset, 'project_labels'):
                 y = dataset.project_labels(y, device)
+            if is_binary:
+                for i in range(2):
+                    num_logits[i] = (y==i).sum().cpu().item()
+                    sum_logits[i] = logits[y==i].sum().cpu().item()
             pred = logits.argmax(dim=1, keepdim=True).to(device)
             if hasattr(dataset, 'accuracy'):
                 acc1, num_total = dataset.accuracy(logits, y, image_paths, args)
@@ -75,6 +82,9 @@ def eval_single_dataset(image_classifier, dataset, args):
     if 'top1' not in metrics:
         metrics['top1'] = top1
     
+    if is_binary:
+        for i in range(2):
+            print(f'label={i}, mean logits={sum_logits[i] / max(1, num_logits[i])}')
     return metrics
 
 def evaluate(image_classifier, args):

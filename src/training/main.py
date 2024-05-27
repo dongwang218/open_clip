@@ -110,7 +110,7 @@ def main(args):
             print(
                 "Error. Experiment already exists. Use --name {} to specify a new experiment."
             )
-            return -1
+            # return -1
 
     # Setup text logger
     args.log_level = logging.DEBUG if args.debug else logging.INFO
@@ -498,7 +498,7 @@ def copy_codebase(args):
         print(
             f"Error. Experiment already exists at {new_code_path}. Use --name to specify a new experiment."
         )
-        return -1
+        # return -1
     print(f"Copying codebase to {new_code_path}")
     current_code_path = os.path.realpath(__file__)
     for _ in range(3):

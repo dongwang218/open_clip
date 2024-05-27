@@ -21,7 +21,8 @@ def _merge(alpha, theta_0, theta_1):
 
 def wise_ft(args, model, preprocess_train, preprocess_val, tokenizer):
     args.save = os.path.join(args.logs, args.name)
-    
+    is_binary = args.classnames in ['vww']
+
     if args.load is None:
         # Build and save zero-shot model
         image_encoder = ImageEncoder(args, model, preprocess_train, preprocess_val, keep_lang=True)
@@ -35,8 +36,13 @@ def wise_ft(args, model, preprocess_train, preprocess_val, tokenizer):
             device=args.device,
             use_tqdm=True,
         )
-        zeroshot_weights *= model.logit_scale.exp()
-        classification_head = ClassificationHead(normalize=True, weights=zeroshot_weights.T)
+        if is_binary:
+            # without the cosine simialr become 20-30
+            biases = torch.ones((1,1))*(args.bias or 0)
+            classification_head = ClassificationHead(normalize=True, weights=zeroshot_weights.T, biases=biases)
+        else:
+            zeroshot_weights *= model.logit_scale.exp()
+            classification_head = ClassificationHead(normalize=True, weights=zeroshot_weights.T)
         delattr(image_encoder.model, 'transformer')
         classifier = ImageClassifier(image_encoder, classification_head, process_images=False)
         zeroshot_checkpoint = os.path.join(args.save, 'zeroshot.pt')

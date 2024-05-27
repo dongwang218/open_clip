@@ -42,7 +42,8 @@ class ImageNet:
             self.test_dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            sampler=self.get_test_sampler()
+            sampler=self.get_test_sampler(),
+            shuffle=True
         )
 
     def get_test_path(self):
@@ -151,8 +152,7 @@ class VWW(ImageNet):
     def name(self):
         return 'vww'
     
-    def accuracy(logits, y, image_paths, args):
+    def accuracy(self, logits, y, image_paths, args):
         preds = (logits >= 0).float()
         correct = (preds == y.view(-1, 1)).float()
-        accuracy = correct.sum() / len(correct)
-        return accuracy, len(correct)
+        return correct.sum().cpu().item(), len(correct)
