@@ -135,5 +135,5 @@ def get_dataloader(dataset, is_train, args, image_encoder=None):
         feature_dataset = FeatureDataset(is_train, image_encoder, dataset, args.device)
         dataloader = DataLoader(feature_dataset, batch_size=args.batch_size, shuffle=is_train)
     else:
-        dataloader = dataset.train_loader if is_train else dataset.test_loader
+        dataloader = dataset.get_train_loader() if is_train else dataset.get_test_loader()
     return dataloader
