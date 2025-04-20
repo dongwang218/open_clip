@@ -17,7 +17,7 @@ except ImportError:
 from open_clip import get_input_dtype, CLIP, CustomTextCLIP
 from open_clip_train.distributed import is_master
 from open_clip_train.zero_shot import zero_shot_eval
-from open_clip_train.precision import get_autocast
+from open_clip_train.precision import get_autocast, get_te_autocast
 
 
 class AverageMeter(object):
@@ -61,9 +61,10 @@ def backward(total_loss, scaler):
         total_loss.backward()
 
 
-def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist_model, args, tb_writer=None):
+def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist_model, args, tb_writer=None, te_fp8=False):
     device = torch.device(args.device)
     autocast = get_autocast(args.precision, device_type=device.type)
+    fp8cast = get_te_autocast(te_fp8)
     input_dtype = get_input_dtype(args.precision)
 
     model.train()
@@ -98,32 +99,34 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
 
         if args.accum_freq == 1:
             with autocast():
-                model_out = model(images, texts)
-                logit_scale = model_out["logit_scale"]
-                if args.distill:
-                    with torch.no_grad():
-                        dist_model_out = dist_model(images, texts)
-                    model_out.update({f'dist_{k}': v for k, v in dist_model_out.items()})
-                losses = loss(**model_out, output_dict=True)
+                with fp8cast():
+                    model_out = model(images, texts)
+                    logit_scale = model_out["logit_scale"]
+                    if args.distill:
+                        with torch.no_grad():
+                            dist_model_out = dist_model(images, texts)
+                        model_out.update({f'dist_{k}': v for k, v in dist_model_out.items()})
+                    losses = loss(**model_out, output_dict=True)
 
-                total_loss = sum(losses.values())
-                losses["loss"] = total_loss
+                    total_loss = sum(losses.values())
+                    losses["loss"] = total_loss
 
             backward(total_loss, scaler)
         else:
             # First, cache the features without any gradient tracking.
             with torch.no_grad():
                 with autocast():
-                    model_out = model(images, texts)
+                    with fp8cast():
+                        model_out = model(images, texts)
 
-                    for f in ("logit_scale", "logit_bias"):
-                        model_out.pop(f, None)
+                        for f in ("logit_scale", "logit_bias"):
+                            model_out.pop(f, None)
 
-                    for key, val in model_out.items():
-                        if key in accum_features:
-                            accum_features[key].append(val)
-                        else:
-                            accum_features[key] = [val]
+                        for key, val in model_out.items():
+                            if key in accum_features:
+                                accum_features[key].append(val)
+                            else:
+                                accum_features[key] = [val]
 
                 accum_images.append(images)
                 accum_texts.append(texts)
@@ -248,7 +251,7 @@ def train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist
     # end for
 
 
-def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
+def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None, te_fp8=False):
     metrics = {}
     if not is_master(args):
         return metrics
@@ -259,6 +262,7 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
     metrics.update(zero_shot_metrics)
 
     autocast = get_autocast(args.precision, device_type=device.type)
+    fp8cast = get_te_autocast(te_fp8)
     input_dtype = get_input_dtype(args.precision)
 
     if 'val' in data and (args.val_frequency and ((epoch % args.val_frequency) == 0 or epoch == args.epochs)):
@@ -278,26 +282,27 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
                 texts = texts.to(device=device, non_blocking=True)
 
                 with autocast():
-                    model_out = model(images, texts)
-                    image_features = model_out["image_features"]
-                    text_features = model_out["text_features"]
-                    logit_scale = model_out["logit_scale"]
-                    # features are accumulated in CPU tensors, otherwise GPU memory exhausted quickly
-                    # however, system RAM is easily exceeded and compute time becomes problematic
-                    all_image_features.append(image_features.cpu())
-                    all_text_features.append(text_features.cpu())
-                    logit_scale = logit_scale.mean()
-                    logits_per_image = logit_scale * image_features @ text_features.t()
-                    logits_per_text = logits_per_image.t()
+                    with fp8cast():
+                        model_out = model(images, texts)
+                        image_features = model_out["image_features"]
+                        text_features = model_out["text_features"]
+                        logit_scale = model_out["logit_scale"]
+                        # features are accumulated in CPU tensors, otherwise GPU memory exhausted quickly
+                        # however, system RAM is easily exceeded and compute time becomes problematic
+                        all_image_features.append(image_features.cpu())
+                        all_text_features.append(text_features.cpu())
+                        logit_scale = logit_scale.mean()
+                        logits_per_image = logit_scale * image_features @ text_features.t()
+                        logits_per_text = logits_per_image.t()
 
-                    batch_size = images.shape[0]
-                    labels = torch.arange(batch_size, device=device).long()
-                    total_loss = (
-                        F.cross_entropy(logits_per_image, labels) +
-                        F.cross_entropy(logits_per_text, labels)
-                    ) / 2
+                        batch_size = images.shape[0]
+                        labels = torch.arange(batch_size, device=device).long()
+                        total_loss = (
+                            F.cross_entropy(logits_per_image, labels) +
+                            F.cross_entropy(logits_per_text, labels)
+                        ) / 2
 
-                    gen_loss = maybe_compute_generative_loss(model_out)
+                        gen_loss = maybe_compute_generative_loss(model_out)
 
                 cumulative_loss += total_loss * batch_size
                 num_samples += batch_size

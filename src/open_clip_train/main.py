@@ -238,6 +238,7 @@ def main(args):
         pretrained_image=args.pretrained_image,
         output_dict=True,
         cache_dir=args.cache_dir,
+        te_fp8=args.te_fp8,
         **model_kwargs,
     )
     if args.distill:
@@ -480,11 +481,11 @@ def main(args):
         if is_master(args):
             logging.info(f'Start epoch {epoch}')
 
-        train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist_model, args, tb_writer=writer)
+        train_one_epoch(model, data, loss, epoch, optimizer, scaler, scheduler, dist_model, args, tb_writer=writer, te_fp8=args.te_fp8)
         completed_epoch = epoch + 1
 
         if any(v in data for v in ('val', 'imagenet-val', 'imagenet-v2')):
-            evaluate(model, data, completed_epoch, args, tb_writer=writer, tokenizer=tokenizer)
+            evaluate(model, data, completed_epoch, args, tb_writer=writer, tokenizer=tokenizer, te_fp8=args.te_fp8)
 
         # Saving checkpoints.
         if args.save_logs:

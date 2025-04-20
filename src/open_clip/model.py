@@ -106,7 +106,8 @@ def _build_vision_tower(
         embed_dim: int,
         vision_cfg: CLIPVisionCfg,
         quick_gelu: bool = False,
-        cast_dtype: Optional[torch.dtype] = None
+        cast_dtype: Optional[torch.dtype] = None,
+        te_fp8: bool = False,
 ):
     if isinstance(vision_cfg, dict):
         vision_cfg = CLIPVisionCfg(**vision_cfg)
@@ -166,6 +167,7 @@ def _build_vision_tower(
             output_dim=embed_dim,
             act_layer=act_layer,
             norm_layer=norm_layer,
+            te_fp8=te_fp8,
         )
 
     return visual
@@ -176,6 +178,7 @@ def _build_text_tower(
         text_cfg: CLIPTextCfg,
         quick_gelu: bool = False,
         cast_dtype: Optional[torch.dtype] = None,
+        te_fp8: bool = False,
 ):
     if isinstance(text_cfg, dict):
         text_cfg = CLIPTextCfg(**text_cfg)
@@ -215,6 +218,7 @@ def _build_text_tower(
             output_tokens=text_cfg.output_tokens,
             act_layer=act_layer,
             norm_layer=norm_layer,
+            te_fp8=te_fp8,
         )
     return text
 
@@ -233,13 +237,14 @@ class CLIP(nn.Module):
             nonscalar_logit_scale: bool = False,
             cast_dtype: Optional[torch.dtype] = None,
             output_dict: bool = False,
+            te_fp8: bool = False,
     ):
         super().__init__()
         self.output_dict = output_dict
 
-        self.visual = _build_vision_tower(embed_dim, vision_cfg, quick_gelu, cast_dtype)
+        self.visual = _build_vision_tower(embed_dim, vision_cfg, quick_gelu, cast_dtype, te_fp8)
 
-        text = _build_text_tower(embed_dim, text_cfg, quick_gelu, cast_dtype)
+        text = _build_text_tower(embed_dim, text_cfg, quick_gelu, cast_dtype, te_fp8)
         self.transformer = text.transformer
         self.context_length = text.context_length
         self.vocab_size = text.vocab_size

@@ -475,6 +475,12 @@ def parse_args(args):
         type=str,
         help='A string to specify a specific distributed loss implementation.'
     )
+    parser.add_argument(
+        "--te-fp8",
+        default=False,
+        action="store_true",
+        help='Use transformerengine fp8.'
+    )
 
     args = parser.parse_args(args)
 

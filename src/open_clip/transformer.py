@@ -431,36 +431,39 @@ class Transformer(nn.Module):
             norm_layer: Callable = LayerNorm,
             batch_first: bool = True,
             self_attn_mask_type='no_mask',
+            te_fp8: bool = False,
     ):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.batch_first = False # batch_first
+        self.batch_first = False if te_fp8 else batch_first
         self.grad_checkpointing = False
+        self.te_fp8 = te_fp8
 
         self.resblocks = nn.ModuleList([
-            # ResidualAttentionBlock(
-            #     width,
-            #     heads,
-            #     mlp_ratio,
-            #     ls_init_value=ls_init_value,
-            #     act_layer=act_layer,
-            #     norm_layer=norm_layer,
-            #     batch_first=batch_first,
-            # )
+            (ResidualAttentionBlock(
+                width,
+                heads,
+                mlp_ratio,
+                ls_init_value=ls_init_value,
+                act_layer=act_layer,
+                norm_layer=norm_layer,
+                batch_first=batch_first,
+            ) if not te_fp8 else 
             te.TransformerLayer(
             hidden_size=width,
             ffn_hidden_size=int(width*mlp_ratio),
             num_attention_heads=heads,
             fuse_qkv_params=True,
             self_attn_mask_type=self_attn_mask_type,
-         )
+         ))
             for _ in range(layers)
         ])
 
     def get_cast_dtype(self) -> torch.dtype:
-        return self.resblocks[0].self_attention.layernorm_qkv.layer_norm_weight.dtype
-        if hasattr(self.resblocks[0].mlp.c_fc, 'int8_original_dtype'):
+        if hasattr(self.resblocks[0], "self_attention"):
+            return self.resblocks[0].self_attention.layernorm_qkv.layer_norm_weight.dtype
+        elif hasattr(self.resblocks[0].mlp.c_fc, 'int8_original_dtype'):
             return self.resblocks[0].mlp.c_fc.int8_original_dtype
         return self.resblocks[0].mlp.c_fc.weight.dtype
 
@@ -511,7 +514,10 @@ class Transformer(nn.Module):
                 # TODO: handle kwargs https://github.com/pytorch/pytorch/issues/79887#issuecomment-1161758372
                 x = checkpoint(r, x, None, None, attn_mask, use_reentrant=False)
             else:
-                x = r(x, attention_mask=attn_mask)
+                if self.te_fp8:
+                    x = r(x, attention_mask=attn_mask)
+                else:
+                    x = r(x, attn_mask=attn_mask)
 
         if not self.batch_first:
             x = x.transpose(0, 1)    # LND -> NLD
@@ -546,6 +552,7 @@ class VisionTransformer(nn.Module):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
             output_tokens: bool = False,
+            te_fp8: bool = False,
     ):
         super().__init__()
         assert pool_type in ('tok', 'avg', 'none')
@@ -594,6 +601,7 @@ class VisionTransformer(nn.Module):
             act_layer=act_layer,
             norm_layer=norm_layer,
             self_attn_mask_type='no_mask',
+            te_fp8=te_fp8,
         )
 
         if attentional_pool:
@@ -888,6 +896,7 @@ class TextTransformer(nn.Module):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
             output_tokens: bool = False,
+            te_fp8: bool = False,
     ):
         super().__init__()
         assert pool_type in ('first', 'last', 'argmax', 'none')
@@ -899,6 +908,7 @@ class TextTransformer(nn.Module):
         self.heads = heads
         self.pad_id = pad_id
         self.pool_type = pool_type
+        self.te_fp8 = te_fp8
 
         self.token_embedding = nn.Embedding(vocab_size, width)
         if embed_cls:
@@ -916,6 +926,7 @@ class TextTransformer(nn.Module):
             act_layer=act_layer,
             norm_layer=norm_layer,
             self_attn_mask_type='causal',
+            te_fp8=te_fp8,
         )
         self.ln_final = norm_layer(width)
 
@@ -943,11 +954,12 @@ class TextTransformer(nn.Module):
         proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
         attn_std = self.transformer.width ** -0.5
         fc_std = (2 * self.transformer.width) ** -0.5
-        # for block in self.transformer.resblocks:
-        #     nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
-        #     nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
-        #     nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
-        #     nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
+        if not self.te_fp8:
+            for block in self.transformer.resblocks:
+                nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
+                nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
+                nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
+                nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
 
         if self.text_projection is not None:
             if isinstance(self.text_projection, nn.Linear):
