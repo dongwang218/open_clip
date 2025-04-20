@@ -285,7 +285,7 @@ class CLIP(nn.Module):
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
 
         x = x + self.positional_embedding.to(cast_dtype)
-        x = self.transformer(x) # , attn_mask=self.attn_mask)
+        x = self.transformer(x, attn_mask=self.attn_mask)
         x = self.ln_final(x)  # [batch_size, n_ctx, transformer.width]
         x = text_global_pool(x, text, self.text_pool_type)
         if self.text_projection is not None:

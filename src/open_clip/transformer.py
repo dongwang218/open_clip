@@ -435,7 +435,7 @@ class Transformer(nn.Module):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.batch_first = batch_first
+        self.batch_first = False # batch_first
         self.grad_checkpointing = False
 
         self.resblocks = nn.ModuleList([
