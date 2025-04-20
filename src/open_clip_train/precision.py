@@ -17,7 +17,9 @@ def get_autocast(precision, device_type='cuda'):
 
 def get_te_autocast(te_fp8):
     if te_fp8:
-        fp8_recipe = recipe.DelayedScaling(margin=0, interval=1, fp8_format=recipe.Format.HYBRID)
+        #fp8_recipe = recipe.DelayedScaling(margin=0, interval=1, fp8_format=recipe.Format.HYBRID)
+        # fp8_recipe = recipe.DelayedScaling(margin=2, interval=4, fp8_format=recipe.Format.HYBRID)
+        fp8_recipe = recipe.DelayedScaling(margin=2, interval=4, fp8_format=recipe.Format.E4M3)
         return partial (te.fp8_autocast, enabled=True, fp8_recipe=fp8_recipe)
     else:
         return lambda: nullcontext()
