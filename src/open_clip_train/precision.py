@@ -1,8 +1,6 @@
 import torch
 from contextlib import suppress
 from functools import partial
-import transformer_engine.pytorch as te
-from transformer_engine.common import recipe
 from contextlib import nullcontext
 
 def get_autocast(precision, device_type='cuda'):
@@ -17,6 +15,8 @@ def get_autocast(precision, device_type='cuda'):
 
 def get_te_autocast(te_fp8):
     if te_fp8:
+        import transformer_engine.pytorch as te
+        from transformer_engine.common import recipe
         #fp8_recipe = recipe.DelayedScaling(margin=0, interval=1, fp8_format=recipe.Format.HYBRID)
         fp8_recipe = recipe.DelayedScaling(margin=2, interval=4, fp8_format=recipe.Format.HYBRID)
         # fp8_recipe = recipe.DelayedScaling(margin=2, interval=4, fp8_format=recipe.Format.E4M3)

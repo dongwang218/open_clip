@@ -6,7 +6,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.checkpoint import checkpoint
-import transformer_engine.pytorch as te
 
 from .utils import to_2tuple, feature_take_indices
 from .pos_embed import get_2d_sincos_pos_embed
@@ -159,7 +158,12 @@ class Attention(nn.Module):
             attn = self.attn_drop(attn)
             x = torch.bmm(attn, v)
         else:
-            if self.use_fsdpa:
+            if True:
+                import flash_attn_interface
+                # dropout is not supported in fa3 https://github.com/Dao-AILab/flash-attention/issues/1377
+                x = flash_attn_interface.flash_attn_func(q, k, v,
+                                                          causal=attn_mask is not None)   
+            elif self.use_fsdpa:
                 x = F.scaled_dot_product_attention(
                     q, k, v,
                     attn_mask=attn_mask,
@@ -433,6 +437,7 @@ class Transformer(nn.Module):
             self_attn_mask_type='no_mask',
             te_fp8: bool = False,
     ):
+
         super().__init__()
         self.width = width
         self.layers = layers
@@ -440,25 +445,30 @@ class Transformer(nn.Module):
         self.grad_checkpointing = False
         self.te_fp8 = te_fp8
 
-        self.resblocks = nn.ModuleList([
-            (ResidualAttentionBlock(
-                width,
-                heads,
-                mlp_ratio,
-                ls_init_value=ls_init_value,
-                act_layer=act_layer,
-                norm_layer=norm_layer,
-                batch_first=batch_first,
-            ) if not te_fp8 else 
-            te.TransformerLayer(
-            hidden_size=width,
-            ffn_hidden_size=int(width*mlp_ratio),
-            num_attention_heads=heads,
-            fuse_qkv_params=True,
-            self_attn_mask_type=self_attn_mask_type,
-         ))
-            for _ in range(layers)
-        ])
+        blocks = []
+        for _ in range(layers):
+            if not te_fp8:
+                block = ResidualAttentionBlock(
+                    width,
+                    heads,
+                    mlp_ratio=mlp_ratio,
+                    ls_init_value=ls_init_value,
+                    act_layer=act_layer,
+                    norm_layer=norm_layer,
+                    batch_first=batch_first,
+                )
+            else:
+                import transformer_engine.pytorch as te
+                block = te.TransformerLayer(
+                    hidden_size=width,
+                    ffn_hidden_size=int(width*mlp_ratio),
+                    num_attention_heads=heads,
+                    fuse_qkv_params=True,
+                    self_attn_mask_type=self_attn_mask_type,
+                )
+            blocks.append(block)
+
+        self.resblocks = nn.ModuleList(blocks)
 
     def get_cast_dtype(self) -> torch.dtype:
         if hasattr(self.resblocks[0], "self_attention"):
